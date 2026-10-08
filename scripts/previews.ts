@@ -13,8 +13,7 @@ import { diffSvg } from '../hooks/svg-diff'
 import { escape, FONT, MONO } from '../hooks/svg-kit'
 import { tableSvg } from '../hooks/svg-table'
 import { terminalSvg } from '../hooks/svg-terminal'
-import { usageSvg } from '../hooks/svg-usage'
-import noir from '../hooks/themes/noir'
+import orca from '../hooks/themes/orca'
 
 const OUT = join(import.meta.dirname, '..', 'docs', 'previews')
 const WIDTH = 760
@@ -114,19 +113,18 @@ function write(name: string, source: string | Built): void {
 mkdirSync(OUT, { recursive: true })
 
 for (const [theme, palette] of [
-  ['dark', noir.palette],
-  ['light', noir.light ?? toLight(noir.palette)],
+  ['dark', orca.palette],
+  ['light', orca.light ?? toLight(orca.palette)],
 ] as const) {
   write(`hero-${theme}`, hero(palette))
   write(`spinners-${theme}`, spinners(palette))
   write(`terminal-${theme}`, terminalSvg({ stdout: ' Test Files  12 passed (12)\n      Tests  148 passed (148)\n   Duration  3.41s', stderr: '', interrupted: false }, false, palette, WIDTH))
   write(`code-${theme}`, codeSvg(['// Rate limit per route, keyed by user', 'export function limit(route: string, perMinute = 60) {', '  const used = new Map<string, number>()', '  return (user: string) => (used.get(user) ?? 0) < perMinute', '}'].join('\n'), 'ts', palette, WIDTH))
-  write(`usage-${theme}`, usageSvg([{ label: 'context', percent: 42 }, { label: '5h', percent: 18 }, { label: '7d', percent: 61 }], palette).source)
 }
 
 const page = (background: string, theme: string) =>
-  `<section style="background:${background};padding:24px;margin:0 0 16px"><h3 style="color:${theme === 'dark' ? '#ededed' : '#151515'};font:600 13px system-ui">${theme}</h3>${['hero', 'spinners', 'terminal', 'code', 'usage'].map(name => `<p><img src="${name}-${theme}.svg"></p>`).join('')}</section>`
+  `<section style="background:${background};padding:24px;margin:0 0 16px"><h3 style="color:${theme === 'dark' ? '#ededed' : '#151515'};font:600 13px system-ui">${theme}</h3>${['hero', 'spinners', 'terminal', 'code'].map(name => `<p><img src="${name}-${theme}.svg"></p>`).join('')}</section>`
 
-writeFileSync(join(OUT, 'index.html'), `<!doctype html><meta charset="utf-8"><title>skins previews</title><body style="margin:0">${page('#151515', 'dark')}${page('#ffffff', 'light')}</body>`)
+writeFileSync(join(OUT, 'index.html'), `<!doctype html><meta charset="utf-8"><title>orca previews</title><body style="margin:0">${page('#151515', 'dark')}${page('#ffffff', 'light')}</body>`)
 
 console.log(`wrote previews to ${OUT}`)

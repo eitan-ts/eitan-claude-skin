@@ -14,8 +14,6 @@ import { cardWidth } from './svg-kit'
 import { tableSvg } from './svg-table'
 import { terminalSvg } from './svg-terminal'
 import type { ShellOutput } from './svg-terminal'
-import { usageLine, usageSvg } from './svg-usage'
-import type { Meter } from './svg-usage'
 import { kindOf, toolLabel } from './tools'
 
 export type Ui = Pick<ElementTable, 'Box' | 'Text' | 'Markdown' | 'Button'>
@@ -245,22 +243,6 @@ export function desktopSpinnerRow(look: Look, Svg: SvgElement, mode: SpinnerMode
   )
 }
 
-// Your message in a rounded outline sized to what you typed, so it stands apart from
-// replies without taking the full width. Images it carried follow below it, drawn by
-// Claude Code.
-export function promptRow(look: Look, text: string, images?: ReturnType<Ui['Text']>) {
-  const { Box, Text } = look.ui
-
-  return (
-    <Box flexDirection="column" alignItems="flex-start" marginY={1}>
-      <Box borderStyle="round" borderColor={look.skin.palette.muted} paddingX={1} flexShrink={1}>
-        <Text color={look.skin.palette.fg}>{text}</Text>
-      </Box>
-      {images ?? ''}
-    </Box>
-  )
-}
-
 const JUSTIFY = { left: 'flex-start', right: 'flex-end', center: 'center' } as const
 
 // The share of the reported width a table may take at its natural size. Past it, the
@@ -353,22 +335,6 @@ function copyButton(look: Look, key: string, text: string) {
   return copy === undefined ? undefined : <Button key={key} label=" Copy " plain dimColor onPress={() => copy(text)} />
 }
 
-// A small Copy button under a card or block, flush right; nothing where nothing can copy.
-export function copyRow(look: Look, key: string, text: string) {
-  const { Box, Button } = look.ui
-  const copy = look.copy
-
-  if (copy === undefined) {
-    return ''
-  }
-
-  return (
-    <Box flexDirection="row" justifyContent="flex-end">
-      <Button key={key} label="Copy" plain dimColor onPress={() => copy(text)} />
-    </Box>
-  )
-}
-
 export function replyRows(look: Look, segments: readonly Segment[], maxWidth: number, Svg?: SvgElement) {
   const { Box, Markdown } = look.ui
 
@@ -381,10 +347,7 @@ export function replyRows(look: Look, segments: readonly Segment[], maxWidth: nu
 
         if (segment.kind === 'code') {
           return Svg === undefined ? (
-            <Box flexDirection="column">
-              <Markdown text={segment.raw} />
-              {copyRow(look, `copy-${i}`, segment.code)}
-            </Box>
+            <Markdown text={segment.raw} />
           ) : (
             codeCard(look, segment.lang, segment.code, Svg, maxWidth, `copy-${i}`)
           )
@@ -496,64 +459,4 @@ export function terminalCard(look: Look, Svg: SvgElement, output: ShellOutput, i
   const withCopy = text === '' ? { ...look, copy: undefined } : look
 
   return cardWithCopy(withCopy, Svg, terminalSvg(output, isErrored, look.skin.palette, cardWidth(columns), withCopy.copy !== undefined), 'copy-output', text)
-}
-
-// From this full, the band suggests compacting and makes it the main action.
-export const COMPACT_NUDGE = 70
-
-export const COMPACT_HOTKEY = '0'
-
-function meterView(look: Look, meters: readonly Meter[]) {
-  const { Box, Text } = look.ui
-  const { palette } = look.skin
-
-  if (look.svg !== undefined) {
-    const Svg = look.svg
-    const built = usageSvg(meters, palette)
-
-    return <Svg source={built.source} alt={built.alt} width={built.width} height={built.height} />
-  }
-
-  return (
-    <Box flexDirection="row" columnGap={3}>
-      {usageLine(meters).map(meter => (
-        <Text color={palette.muted}>
-          <Text color={palette.user}>{meter.bar}</Text>
-          {` ${meter.percent}% ${meter.label}`}
-        </Text>
-      ))}
-    </Box>
-  )
-}
-
-// The band above the prompt: the meters, and a Compact button that becomes the main
-// action, with a word on why, once the context is full enough to be worth it.
-export function usageBand(look: Look, meters: readonly Meter[], canCompact: boolean, compact: () => void) {
-  const { Box, Text, Button } = look.ui
-  const { palette } = look.skin
-  const context = meters.find(meter => meter.label === 'context')?.percent ?? 0
-  const isNudge = context >= COMPACT_NUDGE
-
-  return (
-    // The right edge stays clear: the band draws its own collapse mark ([-]) there.
-    <Box flexDirection="row" alignItems="center" columnGap={2} paddingRight={5}>
-      {meterView(look, meters)}
-      <Box flexGrow={1} />
-      {canCompact && isNudge ? <Text color={palette.warn}>{`Context is ${context}% full`}</Text> : ''}
-      {canCompact ? (
-        // A digit hotkey: typed alone into an empty prompt it presses the band's button, which
-        // is the only way in where the terminal reports no clicks. `plain` shows it: `0: Compact`.
-        <Button
-          key="compact"
-          label={isNudge ? 'Compact now' : 'Compact'}
-          hotkey={COMPACT_HOTKEY}
-          plain
-          {...(isNudge ? { variant: 'primary' as const } : { dimColor: true })}
-          onPress={compact}
-        />
-      ) : (
-        ''
-      )}
-    </Box>
-  )
 }

@@ -6,7 +6,7 @@ import { widthOf } from '../hooks/markdown'
 
 const SURFACES = ['terminal', 'desktop'] as const
 
-const SITE = { plugin: 'skins', viewport: { columns: 100, rows: 30 } } as const
+const SITE = { plugin: 'eitan-skin', viewport: { columns: 100, rows: 30 } } as const
 
 // Stands for what Claude Code would draw wherever the skin hands a row back.
 const STOCK: RenderElement = { type: 'Text', props: {}, children: ['stock row'] }
@@ -72,7 +72,6 @@ function stubEngine(on: On) {
   on('store.set', () => ({ value: undefined }))
   on('ui.toast', () => ({ value: undefined }))
   on('ui.open', () => ({ value: { isPlaced: true } }))
-  on('session.usage', () => ({ value: { startedAt: 0, context: { window: 200000, percent: 42 }, rateLimits: [{ kind: 'five_hour', percentUsed: 18 }] } }))
   // The dialog must hold Claude Code's own drawing, which a real engine hands back by reference.
   on('ui.render', ($, e) => (e.component === 'AskUserQuestion' ? { type: 'engine', ref: 0 } : STOCK))
 }
@@ -141,27 +140,6 @@ test('a folded group is one node, an expanded one keeps its rows', async ($, on)
 
   const expanded = await $.ui.mount(group(true))
   expect(await expanded.find({ type: 'Text', text: 'stock row' })).toBeDefined()
-})
-
-test('a typed prompt sits in an outline sized to its text, other senders keep their row', async ($, on) => {
-  stubEngine(on)
-
-  for (const surface of SURFACES) {
-    const prompt = (kind: 'composer' | 'task-notification') =>
-      ({ ...SITE, surface, component: 'UserMessage', requestId: 'm1', props: { text: 'fix the build', origin: { kind }, isExpanded: false } }) as const
-
-    const typed = await $.ui.mount(prompt('composer'))
-    const column = (await typed.find({ type: 'Box' })) as { props: { alignItems?: string }; children?: readonly { props?: { borderStyle?: string } }[] } | undefined
-    // The outline hugs the text: its column does not stretch it to the full width.
-    expect(column?.props.alignItems).toBe('flex-start')
-    expect(column?.children?.[0]?.props?.borderStyle).toBe('round')
-    expect(await typed.find({ type: 'Text', text: 'fix the build' })).toBeDefined()
-    await typed.unmount()
-
-    const notice = await $.ui.mount(prompt('task-notification'))
-    expect(await notice.find({ type: 'Text', text: 'stock row' })).toBeDefined()
-    await notice.unmount()
-  }
 })
 
 test('a reply with a table draws the table, a reply without one keeps its own drawing', async ($, on) => {
@@ -252,44 +230,17 @@ test('the question dialog keeps Claude Code’s drawing under a band naming its 
   expect(await ui.find({ type: 'Text', text: /Approach {2}· {2}Store/ })).toBeDefined()
 })
 
-test('the settings pane picks a skin, switches the rail and paints a slot', async ($, on) => {
+test('the settings pane switches the rail', async ($, on) => {
   stubEngine(on)
 
   const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
-  await pane.press({ key: 'skin-dracula' })
   await pane.press({ key: 'toggle-rail' })
   await pane.unmount()
 
   const row = await $.ui.mount(toolUse(call('Bash', { command: 'ls' })))
-  const found = await row.find({ type: 'Text', text: /Bash/ })
-  expect(spanColor(found, 'Bash')).toBe('#f1fa8c')
   expect(await row.find({ type: 'Text', text: '┃' })).toBeUndefined()
-  await row.unmount()
-
-  const again = await $.ui.mount({ ...PANE, surface: 'desktop' })
-  await again.input({ key: 'hex', text: '#ff0000' })
-  await again.unmount()
-
-  expect((await runSkin($, 'list')).text).toContain('● my-dracula')
-})
-
-test('the agent’s design tool saves a skin and it applies at once', async ($, on) => {
-  stubEngine(on)
-
-  const out = await $.tool.call({
-    tool: 'mcp__skins__design',
-    action: 'save',
-    name: 'sunset',
-    base: 'gruvbox',
-    palette: { run: '#ff8800' },
-  })
-  expect(out.deny).toBeUndefined()
-
-  const row = await $.ui.mount(toolUse(call('Bash', { command: 'ls' })))
-  expect(spanColor(await row.find({ type: 'Text', text: /Bash/ }), 'Bash')).toBe('#ff8800')
-
-  const refused = await $.tool.call({ tool: 'mcp__skins__design', action: 'save', name: 'dracula' })
-  expect(refused.deny).toContain('built-in')
+  expect(spanColor(await row.find({ type: 'Text', text: /Bash/ }), 'Bash')).toBe('#81c784')
+  expect((await runSkin($, 'rail on')).text).toBeUndefined()
 })
 
 test('/skin with no argument opens the settings pane', async ($, on) => {
@@ -370,7 +321,7 @@ test('on the desktop an edit is a diff card and a shell command a terminal card'
   expect(await terminal.find({ type: 'Text', text: 'stock row' })).toBeDefined()
 })
 
-test('a code fence is a card on the desktop and stays markdown in the terminal', async ($, on) => {
+test('a code fence is a card on the desktop and stays plain markdown in the terminal', async ($, on) => {
   stubEngine(on)
 
   const reply = (surface: (typeof SURFACES)[number]) =>
@@ -383,58 +334,6 @@ test('a code fence is a card on the desktop and stays markdown in the terminal',
   const terminal = await $.ui.mount(reply('terminal'))
   expect(await terminal.find({ type: 'Svg' })).toBeUndefined()
   expect(await terminal.find({ type: 'Markdown' })).toBeDefined()
-})
-
-const BAND = (surface: (typeof SURFACES)[number], isWorking: boolean) =>
-  ({
-    ...SITE,
-    surface,
-    component: 'AbovePrompt',
-    requestId: 'band',
-    props: { hasSurvey: false, isWorking, maxRows: 4, bodyColumns: 100, scroll: { offset: 0, bodyRows: 4 }, view: {} },
-  }) as const
-
-test('the band offers Compact, nudges at 70% context, and compacts on a press', async ($, on) => {
-  let compacted = 0
-  const toasts: string[] = []
-  const clock = mock.clock(on, { now: 10_000 })
-  on('store.get', () => ({ value: undefined }))
-  on('ui.toast', ($, e) => {
-    toasts.push(e.text)
-    return { value: undefined }
-  })
-  on('ui.render', () => STOCK)
-  on('command.run', ($, e) => {
-    if (e.command === 'compact') {
-      compacted += 1
-    }
-
-    return {}
-  })
-  on('session.usage', () => ({ value: { startedAt: 0, context: { window: 200000, percent: 85 }, rateLimits: [] } }))
-  on('session.start', () => ({ cwd: '/work' }))
-  on('command.register', () => ({ value: { command: 'skin' } }))
-  on('tool.register', () => ({ value: { tool: 'mcp__skins__design' } }))
-
-  await $.session.start({ surface: 'desktop', isInteractive: true, cwd: '/work' })
-
-  const band = await $.ui.mount(BAND('desktop', false))
-  expect(await band.find({ type: 'Text', text: 'Context is 85% full' })).toBeDefined()
-  // A digit hotkey reaches it from an empty prompt where the terminal reports no clicks.
-  expect(((await band.find({ key: 'compact' })) as { props: { hotkey?: string } } | undefined)?.props.hotkey).toBe('0')
-  await band.press({ key: 'compact' })
-  // It starts on a timer, outside the press, so the press ending cannot cancel it.
-  expect(compacted).toBe(0)
-  // Hidden until that run ends, so more presses cannot queue more runs.
-  expect(await band.find({ key: 'compact' })).toBeUndefined()
-  await clock.advance(1)
-  expect(compacted).toBe(1)
-  expect(await band.find({ key: 'compact' })).toBeDefined()
-  expect(toasts).toEqual([])
-  await band.unmount()
-
-  const busy = await $.ui.mount(BAND('terminal', true))
-  expect(await busy.find({ key: 'compact' })).toBeUndefined()
 })
 
 test('cards draw no background of their own', async ($, on) => {
@@ -452,34 +351,19 @@ test('cards draw no background of their own', async ($, on) => {
   expect(svg?.props.source).not.toContain('background:')
 })
 
-test('/skin gallery opens a pane with every element, numbered, on both surfaces', async ($, on) => {
-  stubEngine(on)
-
-  expect((await runSkin($, 'gallery')).text).toBeUndefined()
-
-  for (const surface of SURFACES) {
-    const ui = await $.ui.mount({ ...PANE, requestId: 'skins-gallery', surface })
-
-    expect(await ui.find({ type: 'Text', text: /^1  Your prompt/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /^11  Turn footer/ })).toBeDefined()
-    await ui.unmount()
-  }
-})
-
 test('on a light Claude Code theme the skin draws dark text for a light background', async ($, on) => {
   stubEngine(on)
   on('config.list', () => ({ value: [{ key: 'theme', label: 'Theme', kind: 'enum', value: 'light', provider: { kind: 'engine' }, isLocked: false }] as never }))
   on('session.start', () => ({ cwd: '/work' }))
   on('command.register', () => ({ value: { command: 'skin' } }))
-  on('tool.register', () => ({ value: { tool: 'mcp__skins__design' } }))
 
   await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/work' })
 
   const row = await $.ui.mount(toolUse(call('Bash', { command: 'ls' })))
-  expect(spanColor(await row.find({ type: 'Text', text: /Bash/ }), 'Bash')).toBe('#111111')
+  expect(spanColor(await row.find({ type: 'Text', text: /Bash/ }), 'Bash')).toBe('#476d49')
 })
 
-test('code blocks, tables and shell output get a Copy button that copies their text', async ($, on) => {
+test('code cards, tables and shell output get a Copy button that copies their text', async ($, on) => {
   stubEngine(on)
   const copied: string[] = []
   on('ui.copy', ($, e) => {
@@ -491,7 +375,10 @@ test('code blocks, tables and shell output get a Copy button that copies their t
 
   for (const surface of SURFACES) {
     const ui = await $.ui.mount({ ...SITE, surface, component: 'AssistantMessage', requestId: `cp-${surface}`, props: { text, isFirstOfReply: true } })
-    await ui.press({ key: 'copy-1' })
+    if (surface === 'desktop') {
+      await ui.press({ key: 'copy-1' })
+    }
+
     await ui.press({ key: 'copy-2' })
     await ui.unmount()
   }
@@ -505,7 +392,7 @@ test('code blocks, tables and shell output get a Copy button that copies their t
   })
   await shell.press({ key: 'copy-output' })
 
-  expect(copied).toEqual(['const a = 1', '| A | B |\n| --- | --- |\n| 1 | 2 |', 'const a = 1', '| A | B |\n| --- | --- |\n| 1 | 2 |', 'built ok'])
+  expect(copied).toEqual(['| A | B |\n| --- | --- |\n| 1 | 2 |', 'const a = 1', '| A | B |\n| --- | --- |\n| 1 | 2 |', 'built ok'])
 })
 
 test('on the desktop the Copy button is laid over the card, in the corner the card leaves free', async ($, on) => {

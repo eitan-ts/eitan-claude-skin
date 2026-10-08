@@ -1,20 +1,15 @@
 import { expect, test } from 'claude-code/testing'
 
 import { DEFAULT_PREFS, parsePrefs, runSkinCommand } from '../hooks/command'
-import { buildCustom, resolveSkin, skinNames, withSlot } from '../hooks/custom'
-import { runDesign } from '../hooks/designer'
 import { clipLines, diffstat, formatDuration, formatMs, pick, shortenPath } from '../hooks/format'
 import { columnWidths, cutCell, padCell, splitReply, widthOf } from '../hooks/markdown'
 import { codeSvg, tokenize } from '../hooks/svg-code'
 import { diffLines, diffSvg, hunksOf } from '../hooks/svg-diff'
 import { fitColumns, kindOfCell, measure, tableSvg, wrapCell } from '../hooks/svg-table'
 import { outputLines, shellOutputOf, terminalSvg } from '../hooks/svg-terminal'
-import { limitLabel, meterColor, metersOf, usageSvg } from '../hooks/svg-usage'
 import { deepen, isLightTheme, toLight } from '../hooks/light'
 import { kindOf, summarize, toolLabel } from '../hooks/tools'
-import tokyoNight from '../hooks/themes/tokyo-night'
-
-const NAMES = ['tokyo-night', 'dracula', 'nord']
+import orca from '../hooks/themes/orca'
 
 test('paths under the session directory show relative, others stay', async () => {
   expect(shortenPath('C:\\work\\app\\src\\a.ts', 'C:\\work\\app')).toBe('src/a.ts')
@@ -116,63 +111,18 @@ test('wide characters count two cells, so CJK cells are measured and cut in term
   expect(widthOf(padCell('레일', 8, 'left'))).toBe(8)
 })
 
-test('a made skin lays its slots over its base, and bad drafts are refused with a reason', async () => {
-  const sunset = buildCustom({ name: 'Sunset', base: 'gruvbox', palette: { user: '#FF8800' } }, undefined)
-
-  expect(typeof sunset).toBe('object')
-
-  const custom = { sunset: sunset as Exclude<typeof sunset, string> }
-  const skin = resolveSkin('sunset', custom)
-
-  expect(skin?.palette.user).toBe('#ff8800')
-  expect(skin?.palette.run).toBe(resolveSkin('gruvbox', {})?.palette.run)
-  expect(skinNames(custom)).toContain('sunset')
-  expect(buildCustom({ name: 'dracula' }, undefined)).toContain('built-in')
-  expect(buildCustom({ name: 'x', palette: { user: 'red' } }, undefined)).toContain('bad palette')
-  expect(buildCustom({ name: 'x', base: 'nope' }, undefined)).toContain('base must be')
-})
-
-test('painting a slot on a built-in skin forks it into my-<name>', async () => {
-  const made = withSlot('nord', {}, 'user', '#123456')
-
-  expect(typeof made === 'string' ? made : made.name).toBe('my-nord')
-  expect(withSlot('nord', {}, 'user', 'blue')).toContain('#7aa2f7')
-})
-
-test('the design tool saves, applies, changes settings and deletes', async () => {
-  const start = { prefs: DEFAULT_PREFS, custom: {} }
-  const saved = runDesign({ action: 'save', name: 'ink', base: 'mono', palette: { user: '#5555ff' } }, start)
-
-  expect(saved.isError).toBe(false)
-  expect(saved.state.prefs.skin).toBe('ink')
-
-  const quiet = runDesign({ action: 'settings', settings: { rail: false, icons: 'ascii' } }, saved.state)
-
-  expect(quiet.state.prefs.rail).toBe(false)
-  expect(quiet.state.prefs.icons).toBe('ascii')
-
-  const gone = runDesign({ action: 'delete', name: 'ink' }, quiet.state)
-
-  expect(gone.state.prefs.skin).toBe(DEFAULT_PREFS.skin)
-  expect(runDesign({ action: 'delete', name: 'nord' }, start).isError).toBe(true)
-  expect(runDesign({ action: 'apply', name: 'nope' }, start).isError).toBe(true)
-  expect(JSON.parse(runDesign({ action: 'show' }, start).text).current).toBe('noir')
-})
-
-test('/skin names a skin, switches parts, and refuses what it does not know', async () => {
-  expect(runSkinCommand('nord', DEFAULT_PREFS, NAMES).prefs.skin).toBe('nord')
-  expect(runSkinCommand('default', DEFAULT_PREFS, NAMES).prefs.skin).toBe('off')
-  expect(runSkinCommand('rail off', DEFAULT_PREFS, NAMES).prefs.rail).toBe(false)
-  expect(runSkinCommand('clip on', DEFAULT_PREFS, NAMES).prefs.clipOutput).toBe(true)
-  expect(runSkinCommand('shimmer maybe', DEFAULT_PREFS, NAMES).prefs).toBe(DEFAULT_PREFS)
-  expect(runSkinCommand('plaid', DEFAULT_PREFS, NAMES).channel).toBe('row')
-  expect(runSkinCommand('list', { ...DEFAULT_PREFS, skin: 'nord' }, NAMES).message).toContain('● nord')
+test('/skin switches parts and refuses what it does not know', async () => {
+  expect(runSkinCommand('rail off', DEFAULT_PREFS).prefs.rail).toBe(false)
+  expect(runSkinCommand('clip on', DEFAULT_PREFS).prefs.clipOutput).toBe(true)
+  expect(runSkinCommand('icons ascii', DEFAULT_PREFS).prefs.icons).toBe('ascii')
+  expect(runSkinCommand('shimmer maybe', DEFAULT_PREFS).prefs).toBe(DEFAULT_PREFS)
+  expect(runSkinCommand('plaid', DEFAULT_PREFS).channel).toBe('row')
 })
 
 test('stored prefs that are stale or hand-edited fall back to defaults', async () => {
-  expect(parsePrefs(undefined, NAMES)).toEqual(DEFAULT_PREFS)
-  expect(parsePrefs({ skin: 'gone', icons: 'x', rail: 'yes' }, NAMES)).toEqual(DEFAULT_PREFS)
-  expect(parsePrefs({ skin: 'off', rail: false }, NAMES).rail).toBe(false)
+  expect(parsePrefs(undefined)).toEqual(DEFAULT_PREFS)
+  expect(parsePrefs({ icons: 'x', rail: 'yes' })).toEqual(DEFAULT_PREFS)
+  expect(parsePrefs({ rail: false }).rail).toBe(false)
 })
 
 test('cells are read as colours, diffs, numbers, code or text', async () => {
@@ -188,12 +138,12 @@ test('cells are read as colours, diffs, numbers, code or text', async () => {
 test('a vector table stays within its width and escapes what it draws', async () => {
   const card = tableSvg(
     { kind: 'table', header: ['a', 'b'], align: ['left', 'right'], rows: [['<b>', 'Q'.repeat(400)]] },
-    tokyoNight.palette,
+    orca.palette,
     5000,
   )
 
   expect(card.width).toBe(1600)
-  expect(tableSvg({ kind: 'table', header: ['a'], align: ['left'], rows: [['b']] }, tokyoNight.palette, 700).width).toBe(700)
+  expect(tableSvg({ kind: 'table', header: ['a'], align: ['left'], rows: [['b']] }, orca.palette, 700).width).toBe(700)
   // A long cell wraps instead of being cut: every one of its 400 characters is drawn.
   expect(card.source).not.toContain('…')
   expect((card.source.match(/Q+/g) ?? []).join('').length).toBe(400)
@@ -225,7 +175,7 @@ test('a new file with an empty patch shows its content as added lines', async ()
   expect(diff?.hunks[0]?.lines).toEqual(['+x', '+y'])
   expect(hunksOf({ stdout: '' })).toBeNull()
 
-  const card = diffSvg(diff!, 'a.ts', tokyoNight.palette, 600)
+  const card = diffSvg(diff!, 'a.ts', orca.palette, 600)
 
   expect(card.source).toContain('new file')
   expect(card.alt).toBe('a.ts: +2 −0')
@@ -239,7 +189,7 @@ test('shell output loses its colour codes, keeps stderr apart and folds the midd
   expect(lines[0]).toEqual({ text: 'ok', isErr: false })
   expect(lines[6]).toEqual({ fold: 30 })
   expect(lines.at(-1)).toEqual({ text: 'warn: x', isErr: true })
-  expect(terminalSvg(shell!, true, tokyoNight.palette, 600).source).toContain('failed')
+  expect(terminalSvg(shell!, true, orca.palette, 600).source).toContain('failed')
   expect(shellOutputOf({ content: 'x' })).toBeNull()
 })
 
@@ -248,18 +198,7 @@ test('code is split into comments, strings, numbers and keywords by language', a
     'keyword', 'plain', 'plain', 'plain', 'string', 'plain', 'comment',
   ])
   expect(tokenize('x = 1  # note', 'python').at(-1)).toEqual({ text: '# note', role: 'comment' })
-  expect(codeSvg('a\nb', 'ts', tokyoNight.palette, 600).source).toContain('TS')
-})
-
-test('plan limits read as 5h and 7d, and a meter warns as it fills', async () => {
-  expect(limitLabel('five_hour')).toBe('5h')
-  expect(limitLabel('seven_day')).toBe('7d')
-  expect(metersOf({ context: 42.4, limits: [{ label: '5h', percent: 120 }] })).toEqual([
-    { label: 'context', percent: 42 },
-    { label: '5h', percent: 100 },
-  ])
-  expect(meterColor(85, tokyoNight.palette)).toBe(tokyoNight.palette.warn)
-  expect(usageSvg([{ label: 'context', percent: 42 }], tokyoNight.palette).alt).toBe('context 42%')
+  expect(codeSvg('a\nb', 'ts', orca.palette, 600).source).toContain('TS')
 })
 
 test('a long cell wraps on its words, breaks a word too long for the column, and caps its lines', async () => {
@@ -277,11 +216,11 @@ test('short columns keep their width and long ones share the rest', async () => 
 })
 
 test('a light palette is derived with dark text, light bands and deepened colours', async () => {
-  const light = toLight(tokyoNight.palette)
+  const light = toLight(orca.palette)
 
   expect(light.fg).toBe('#1f1f1f')
   expect(light.surface).toBe('#ffffff')
-  expect(light.run).toBe(deepen(tokyoNight.palette.run, 0.45))
+  expect(light.run).toBe(deepen(orca.palette.run, 0.45))
   expect(deepen('#ffffff', 0.5)).toBe('#808080')
   expect(isLightTheme('light-daltonized')).toBe(true)
   expect(isLightTheme('dark')).toBe(false)

@@ -1,12 +1,12 @@
 {
-  "name": "hellosverre-mods",
+  "name": "eitan-mods",
   "description": "Mods for Claude Code that change how it looks.",
-  "owner": { "name": "hellosverre", "url": "https://github.com/hellosverre" },
+  "owner": { "name": "eitan-ts", "url": "https://github.com/eitan-ts" },
   "plugins": [
     {
-      "name": "skins",
+      "name": "eitan-skin",
       "source": "./",
-      "description": "Skins for Claude Code's transcript: themed tool rows, reply gutters and spinner words. /skin swaps them live."
+      "description": "The orca skin for Claude Code's transcript: themed tool rows, tables, spinner words and desktop cards."
     }
   ]
 }
